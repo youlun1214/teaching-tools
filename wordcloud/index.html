@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字雲｜送出關鍵字</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --text: #1f2328; --muted: #6b6f76;
+    --accent: #2f6fde; --accent-text: #ffffff; --border: #dedcd5; --ok: #1a7f4b; --err: #c4352b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --card: #1f2227; --text: #eceef1; --muted: #9aa0a8;
+      --accent: #5b8ff0; --accent-text: #0d1117; --border: #33373e; --ok: #4cc58a; --err: #f07167;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: var(--bg); color: var(--text);
+    font-family: "Noto Sans TC", system-ui, sans-serif; padding: 16px;
+  }
+  main {
+    width: 100%; max-width: 440px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 16px; padding: 28px 24px;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .topic { color: var(--muted); margin: 0 0 24px; font-size: 1rem; }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1; min-width: 0; font: inherit; font-size: 1.125rem; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font: inherit; font-weight: 700; font-size: 1.05rem; padding: 12px 20px; border: 0;
+    border-radius: 10px; background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: .875rem; margin: 10px 0 0; }
+  #status { min-height: 1.5em; margin: 16px 0 0; font-weight: 700; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  #sent { margin: 20px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  #sent li { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>送出你的關鍵字</h1>
+  <p class="topic" id="topic">想到什麼就寫什麼，可以送出多次</p>
+  <form id="form" autocomplete="off">
+    <input id="word" maxlength="20" placeholder="輸入一個詞（最多 20 字）" required>
+    <button id="btn" type="submit">送出</button>
+  </form>
+  <p class="hint">送出後會即時出現在老師的大螢幕上</p>
+  <p id="status" role="status"></p>
+  <ul id="sent" aria-label="你已送出的詞"></ul>
+</main>
+
+<script type="module">
+  import { db } from "../firebase-config.js";
+  import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+  const params = new URLSearchParams(location.search);
+  const room = (params.get("room") || "demo").slice(0, 30);
+  const topic = params.get("q");
+  if (topic) document.getElementById("topic").textContent = topic;
+
+  const form = document.getElementById("form");
+  const input = document.getElementById("word");
+  const btn = document.getElementById("btn");
+  const status = document.getElementById("status");
+  const sent = document.getElementById("sent");
+
+  const COOLDOWN_MS = 1500;
+
+  function setStatus(text, kind) {
+    status.textContent = text;
+    status.className = kind || "";
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const word = input.value.replace(/\s+/g, " ").trim();
+    if (!word) return;
+    btn.disabled = true;
+    try {
+      await addDoc(collection(db, "wordcloud_words"), { word, room, createdAt: serverTimestamp() });
+      const li = document.createElement("li");
+      li.textContent = word;
+      sent.prepend(li);
+      input.value = "";
+      setStatus("已送出！", "ok");
+    } catch (err) {
+      console.error(err);
+      setStatus("送出失敗，請稍後再試", "err");
+    } finally {
+      setTimeout(() => { btn.disabled = false; input.focus(); }, COOLDOWN_MS);
+    }
+  });
+</script>
+</body>
+</html>

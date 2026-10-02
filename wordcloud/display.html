@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>即時文字雲</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.2.2/wordcloud2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #fbfaf7; --panel: #ffffff; --text: #1f2328; --muted: #6b6f76; --border: #e3e1da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --panel: #1b1e23; --text: #eceef1; --muted: #9aa0a8; --border: #2e3238; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Noto Sans TC", system-ui, sans-serif;
+    display: grid; grid-template-columns: 1fr 260px; grid-template-rows: auto 1fr;
+    gap: 16px; padding: 16px;
+  }
+  header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 2.4rem); font-weight: 900; }
+  .count { color: var(--muted); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  #stage { position: relative; min-height: 300px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  #cloud { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 1.4rem; }
+  aside { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; }
+  #qr { background: #fff; padding: 10px; border-radius: 10px; }
+  #qr img, #qr canvas { display: block; width: 200px; height: 200px; }
+  .join { font-weight: 700; font-size: 1.1rem; margin: 0; }
+  .room { color: var(--muted); margin: 0; font-size: .95rem; }
+  ol { align-self: stretch; text-align: left; margin: 4px 0 0; padding-left: 1.6em; }
+  ol li { padding: 2px 0; font-variant-numeric: tabular-nums; }
+  ol li span { color: var(--muted); float: right; }
+  @media (max-width: 720px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">即時文字雲</h1>
+  <span class="count" id="count">0 則回應</span>
+</header>
+<section id="stage">
+  <canvas id="cloud" aria-label="文字雲"></canvas>
+  <div id="empty">等待第一個關鍵字…</div>
+</section>
+<aside>
+  <p class="join">掃描加入</p>
+  <div id="qr"></div>
+  <p class="room" id="room"></p>
+  <ol id="top" aria-label="前五名"></ol>
+</aside>
+
+<script type="module">
+  import { db } from "../firebase-config.js";
+  import { collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+  const params = new URLSearchParams(location.search);
+  const room = (params.get("room") || "demo").slice(0, 30);
+  const topic = params.get("q");
+  if (topic) { document.getElementById("title").textContent = topic; document.title = topic; }
+  document.getElementById("room").textContent = `房間：${room}`;
+
+  // 學生頁網址（帶同樣的 room 與題目）
+  const joinUrl = new URL("./", location.href);
+  joinUrl.searchParams.set("room", room);
+  if (topic) joinUrl.searchParams.set("q", topic);
+  new QRCode(document.getElementById("qr"), { text: joinUrl.href, width: 400, height: 400, correctLevel: QRCode.CorrectLevel.M });
+  document.getElementById("qr").title = joinUrl.href;
+
+  const canvas = document.getElementById("cloud");
+  const empty = document.getElementById("empty");
+  const countEl = document.getElementById("count");
+  const topEl = document.getElementById("top");
+  const palette = ["#2f6fde", "#d9480f", "#1a7f4b", "#9c36b5", "#c2255c", "#0b7285", "#e67700"];
+
+  let counts = new Map();
+  let total = 0;
+
+  // 大小寫、全形空白不同的同一個詞視為同一個
+  const normalize = (w) => w.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+
+  function draw() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+
+    const list = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    countEl.textContent = `${total} 則回應・${list.length} 個詞`;
+    empty.style.display = list.length ? "none" : "grid";
+
+    topEl.replaceChildren(...list.slice(0, 5).map(([w, n]) => {
+      const li = document.createElement("li");
+      li.textContent = w;
+      const s = document.createElement("span");
+      s.textContent = n;
+      li.append(s);
+      return li;
+    }));
+
+    if (!list.length) return;
+    const max = list[0][1];
+    const base = Math.min(canvas.width, canvas.height);
+    // 字級依出現次數縮放：最少 base/22，最多 base/5
+    const size = (n) => base / 22 + (base / 5 - base / 22) * Math.sqrt(n / max);
+    const isDark = matchMedia("(prefers-color-scheme: dark)").matches;
+
+    WordCloud(canvas, {
+      list: list.slice(0, 150).map(([w, n]) => [w, size(n)]),
+      weightFactor: 1,
+      fontFamily: '"Noto Sans TC", sans-serif',
+      fontWeight: 700,
+      color: () => palette[Math.floor(Math.random() * palette.length)],
+      backgroundColor: isDark ? "#1b1e23" : "#ffffff",
+      rotateRatio: 0,
+      gridSize: Math.round(8 * dpr),
+      shrinkToFit: true,
+      drawOutOfBound: false,
+      shuffle: false,
+    });
+  }
+
+  let timer;
+  const scheduleDraw = () => { clearTimeout(timer); timer = setTimeout(draw, 400); };
+  addEventListener("resize", scheduleDraw);
+
+  const q = query(collection(db, "wordcloud_words"), where("room", "==", room));
+  onSnapshot(q, (snap) => {
+    const next = new Map();
+    snap.forEach((doc) => {
+      const w = doc.data().word;
+      if (typeof w !== "string") return;
+      const key = normalize(w);
+      if (key) next.set(key, (next.get(key) || 0) + 1);
+    });
+    counts = next;
+    total = snap.size;
+    scheduleDraw();
+  }, (err) => {
+    console.error(err);
+    empty.textContent = "無法連線到資料庫";
+    empty.style.display = "grid";
+  });
+
+  document.fonts.ready.then(scheduleDraw);
+</script>
+</body>
+</html>

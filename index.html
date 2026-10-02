@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>教學小工具</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #f6f5f1; --card: #fff; --text: #1f2328; --muted: #6b6f76; --border: #dedcd5; --accent: #2f6fde; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181c; --card: #1f2227; --text: #eceef1; --muted: #9aa0a8; --border: #33373e; --accent: #7aa5f5; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Noto Sans TC", system-ui, sans-serif; padding: 32px 16px; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { margin: 0 0 24px; }
+  .tool { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .tool h2 { margin: 0 0 6px; font-size: 1.25rem; }
+  .tool p { margin: 0 0 14px; color: var(--muted); }
+  a { color: var(--accent); font-weight: 700; margin-right: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>教學小工具</h1>
+  <div class="tool">
+    <h2>即時文字雲</h2>
+    <p>學生用手機送出關鍵字，大螢幕即時顯示文字雲。網址加上 <code>?room=班級代碼&amp;q=題目</code> 可分開不同活動。</p>
+    <a href="wordcloud/display.html">開啟大螢幕（老師）</a>
+    <a href="wordcloud/">學生輸入頁</a>
+  </div>
+</main>
+</body>
+</html>
