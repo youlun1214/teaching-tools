@@ -1,6 +1,18 @@
 .firebase/
 *-debug.log
 node_modules/
+package-lock.json
 desktop.ini
 .DS_Store
-.claude/
+*.tmp
+~$*
+
+# 敏感資料
+.env
+*.key
+credentials.*
+
+# Claude Code 本地設定（含 permissions、可能記錄 token，絕不上雲）
+# .claude/skills/ 是專案的開工/收工 skill，要 commit
+.claude/*
+!.claude/skills/
